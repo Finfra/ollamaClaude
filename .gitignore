@@ -1,0 +1,84 @@
+# Project 
+_doc_work
+_doc_Design
+.claude
+CLAUDE.md
+Harness.md
+Issue.md
+noteForHuman.md
+PROMPTS.md
+
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Editors
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Build outputs
+dist/
+build/
+out/
+target/
+*.o
+*.a
+*.so
+*.dylib
+
+# Dependencies
+node_modules/
+vendor/
+
+# Cache
+.cache/
+*.pyc
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+
+# Temp
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+z_old/
+
+# Gemini CLI
+GEMINI.md

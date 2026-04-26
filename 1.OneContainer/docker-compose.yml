@@ -1,0 +1,38 @@
+name: ollama_claude_one
+
+services:
+  claude:
+    image: ollama-claude
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: claude
+    restart: unless-stopped
+    environment:
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q4_0
+      - OLLAMA_NUM_GPU=999
+      - OLLAMA_CONTEXT_LENGTH=100000
+      - CUDA_VISIBLE_DEVICES=0
+      - ANTHROPIC_BASE_URL=http://127.0.0.1:11434
+      - ANTHROPIC_AUTH_TOKEN=ollama
+      - ANTHROPIC_MODEL=${OLLAMA_MODEL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+    ports:
+      - "11437:11434"
+    volumes:
+      - ~/df:/home/ubuntu/df
+      - claude-home:/home/ubuntu
+      - ~/.ollama:/root/.ollama
+    tty: true
+    stdin_open: true
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  claude-home:

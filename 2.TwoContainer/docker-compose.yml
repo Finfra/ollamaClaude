@@ -1,0 +1,60 @@
+services:
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=q8_0
+      - OLLAMA_NUM_GPU=999
+      - OLLAMA_CONTEXT_LENGTH=100000
+      - CUDA_VISIBLE_DEVICES=0
+    ports:
+      - "11436:11434"
+    volumes:
+      - ~/df:/df
+      - ~/.ollama:/root/.ollama
+    entrypoint: >
+      bash -c "
+        /bin/ollama serve &
+        sleep 5 &&
+        ollama pull ${OLLAMA_MODEL} || echo 'WARNING: model pull failed, continuing...' ;
+        wait
+      "
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ollama
+
+  claude:
+    image: claude
+    build:
+      context: .
+      dockerfile: Dockerfile.claude
+    container_name: claude
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ~/df:/home/ubuntu/df
+      - claude-home:/home/ubuntu
+    environment:
+      - ANTHROPIC_BASE_URL=http://ollama:11434
+      - ANTHROPIC_AUTH_TOKEN=ollama
+      - ANTHROPIC_MODEL=${OLLAMA_MODEL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+    networks:
+      - ollama
+
+volumes:
+  claude-home:
+
+networks:
+  ollama:
+    name: ollama
