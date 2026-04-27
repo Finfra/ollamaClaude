@@ -16,9 +16,10 @@ RUN apt-get update && \
 # Claude Code 전역 설치 (모든 유저에서 실행 가능)
 RUN npm install -g @anthropic-ai/claude-code
 
-# ubuntu 유저 생성 (UID 1000)
-RUN groupadd -g 1000 ubuntu && \
-    useradd -m -u 1000 -g 1000 -s /bin/bash ubuntu
+# ubuntu 유저 생성 (UID 1000) — 베이스 이미지에 이미 존재하면 스킵
+RUN (getent group ubuntu || groupadd -g 1000 ubuntu) && \
+    (id -u ubuntu >/dev/null 2>&1 || useradd -m -u 1000 -g 1000 -s /bin/bash ubuntu) && \
+    (test -d /home/ubuntu || mkdir -p /home/ubuntu)
 
 RUN echo "alias cc='claude --dangerously-skip-permissions'" >> /home/ubuntu/.bashrc
 
