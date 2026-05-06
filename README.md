@@ -15,8 +15,17 @@ Ollama 위에서 Claude Code를 실행하는 Docker 환경. 두 가지 구성 �
 
 공통 사전 요구사항:
 * Docker / Docker Compose
-* `.env` 파일에 `OLLAMA_MODEL=<모델명>` 지정 (ex: `OLLAMA_MODEL=gemma4:26b`)
+* `.env` 파일 준비 (아래 참조)
 * (Linux GPU 사용 시) NVIDIA Container Toolkit
+
+## .env 설정
+
+```bash
+cp env .env       # 템플릿 복사
+vi .env           # OLLAMA_MODEL 값 수정
+```
+
+`.env`는 `.gitignore`에 포함되어 있어 커밋되지 않음. `env`가 커밋된 템플릿 파일.
 
 # 1.OneContainer
 
@@ -211,7 +220,8 @@ ollamaClaude/
 │   ├── docker-compose.gpu.yml      # GPU override
 │   ├── test-setup.sh
 │   └── .env -> ../.env             # 루트 .env로 심볼릭 링크
-├── .env                            # OLLAMA_MODEL=...  (SSOT)
+├── env                             # .env 템플릿 (커밋됨)
+├── .env                            # OLLAMA_MODEL=...  (SSOT, .gitignore)
 └── README.md
 ```
 
