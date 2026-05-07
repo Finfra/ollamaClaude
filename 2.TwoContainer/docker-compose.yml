@@ -13,7 +13,7 @@ services:
       - "11436:11434"
     volumes:
       - ~/df:/df
-      - ~/.ollama:/root/.ollama
+      - ${OLLAMA_MOUNT:-ollama-models}:/root/.ollama
     entrypoint: >
       bash -c "
         /bin/ollama serve &
@@ -54,6 +54,7 @@ services:
 
 volumes:
   claude-home:
+  ollama-models:
 
 networks:
   ollama:

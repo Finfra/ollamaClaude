@@ -24,7 +24,7 @@ services:
     volumes:
       - ~/df:/home/ubuntu/df
       - claude-home:/home/ubuntu
-      - ~/.ollama:/root/.ollama
+      - ${OLLAMA_MOUNT:-ollama-models}:/root/.ollama
     tty: true
     stdin_open: true
     healthcheck:
@@ -36,3 +36,4 @@ services:
 
 volumes:
   claude-home:
+  ollama-models:

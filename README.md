@@ -1,7 +1,7 @@
 ---
 name: README
 description: Ollama + Claude Code Docker 통합 환경 가이드
-date: 2026-04-27
+date: 2026-05-07
 ---
 
 # 개요
@@ -14,18 +14,29 @@ Ollama 위에서 Claude Code를 실행하는 Docker 환경. 두 가지 구성 �
 | `2.TwoContainer` | 분리 컨테이너 2개     | 운영·다중 클라이언트. Ollama 서비스를 독립시켜 재시작·공유 용이   |
 
 공통 사전 요구사항:
-* Docker / Docker Compose
-* `.env` 파일 준비 (아래 참조)
+* Docker / Docker Compose (v2 권장 — `.env` 자동 로드 + 틸드 확장 지원)
+* 각 컨테이너 폴더의 `.env` 준비 (아래 참조)
 * (Linux GPU 사용 시) NVIDIA Container Toolkit
 
 ## .env 설정
 
+각 컨테이너 폴더에 독립된 `.env`를 두는 방식 (이전 루트 공용 `.env` + 심볼릭 링크 폐기).
+
 ```bash
-cp env .env       # 템플릿 복사
-vi .env           # OLLAMA_MODEL 값 수정
+# 1.OneContainer
+cd 1.OneContainer
+cp env.org.sh .env
+vi .env          # OLLAMA_MODEL, OLLAMA_MOUNT, MOUNT_CODE_DIR 수정
+
+# 2.TwoContainer
+cd 2.TwoContainer
+cp env.org.sh .env
+vi .env
 ```
 
-`.env`는 `.gitignore`에 포함되어 있어 커밋되지 않음. `env`가 커밋된 템플릿 파일.
+* `env.org.sh` — 커밋된 템플릿 (shell 변수 형식, KEY=VALUE)
+* `.env` — 사용자 복사본 (`.gitignore`로 커밋 금지)
+* docker compose가 같은 폴더의 `.env`를 자동 로드하므로 별도 `--env-file` 옵션 불필요
 
 # 1.OneContainer
 
@@ -42,7 +53,7 @@ vi .env           # OLLAMA_MODEL 값 수정
 * 호스트 포트 매핑: `11437 → 11434`
 * 볼륨:
     - `~/df → /home/ubuntu/df` (작업 폴더)
-    - `~/.ollama → /root/.ollama` (모델 저장)
+    - `${OLLAMA_MOUNT} → /root/.ollama` (모델 저장, 토글 가능)
     - `claude-home → /home/ubuntu` (Claude 홈 영속화)
 
 ## 사용법
@@ -55,6 +66,9 @@ docker compose up -d --build
 
 # Linux + NVIDIA GPU
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+
+# 호스트 코드 폴더 마운트 (선택)
+docker compose -f docker-compose.yml -f docker-compose.code.yml up -d --build
 
 # 컨테이너 접속 (ubuntu 유저)
 docker exec -it -u ubuntu claude bash
@@ -82,7 +96,7 @@ cc          # alias = claude --dangerously-skip-permissions
 * `claude` 컨테이너는 ollama healthcheck가 통과한 후 기동 (`depends_on: service_healthy`)
 * 볼륨:
     - `~/df → /df` (ollama) / `~/df → /home/ubuntu/df` (claude)
-    - `~/.ollama → /root/.ollama` (ollama 전용, 모델 저장)
+    - `${OLLAMA_MOUNT} → /root/.ollama` (ollama 전용, 모델 저장, 토글 가능)
     - `claude-home → /home/ubuntu` (Claude 홈 영속화)
 
 ## 사용법
@@ -96,6 +110,9 @@ docker compose up -d --build
 # Linux + NVIDIA GPU
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
 
+# 호스트 코드 폴더 마운트 (선택)
+docker compose -f docker-compose.yml -f docker-compose.code.yml up -d --build
+
 # 클라이언트 접속 (ubuntu 유저, 기본 유저)
 docker exec -it claude bash
 
@@ -108,14 +125,44 @@ docker compose restart ollama
 
 # 모드 비교 요약
 
-| 항목                | 1.OneContainer                      | 2.TwoContainer                            |
-| :------------------ | :---------------------------------- | :---------------------------------------- |
-| 컨테이너 수         | 1                                   | 2 (`ollama`, `claude`)                    |
-| Ollama 접근 (내부)  | `http://127.0.0.1:11434`            | `http://ollama:11434`                     |
-| Ollama 접근 (호스트)| `http://localhost:11437`            | `http://localhost:11436`                  |
-| 베이스 이미지       | `ollama/ollama` (확장)              | `ollama/ollama` + `debian:bookworm-slim` |
-| Ollama 단독 재시작  | 불가 (claude까지 같이 내려감)        | 가능                                      |
-| 다중 클라이언트 공유| 어려움                              | 용이                                      |
+| 항목                | 1.OneContainer                                                  | 2.TwoContainer                                                  |
+| :------------------ | :-------------------------------------------------------------- | :-------------------------------------------------------------- |
+| 컨테이너 수         | 1                                                               | 2 (`ollama`, `claude`)                                          |
+| Ollama 접근 (내부)  | `http://127.0.0.1:11434`                                        | `http://ollama:11434`                                           |
+| Ollama 접근 (호스트)| `http://localhost:11437`                                        | `http://localhost:11436`                                        |
+| 베이스 이미지       | `ollama/ollama` (확장)                                          | `ollama/ollama` + `debian:bookworm-slim`                        |
+| Ollama 단독 재시작  | 불가 (claude까지 같이 내려감)                                    | 가능                                                            |
+| 다중 클라이언트 공유| 어려움                                                          | 용이                                                            |
+| 모델 저장소 토글    | `OLLAMA_MOUNT` (공유: `~/.ollama` / 격리: `ollama-models`)      | 동일                                                            |
+| 코드 폴더 마운트    | `MOUNT_CODE_DIR` + `docker-compose.code.yml`                    | 동일                                                            |
+
+# 마운트 옵션
+
+## 모델 저장소 토글 (`OLLAMA_MOUNT`)
+
+`.env`의 `OLLAMA_MOUNT` 값으로 모델 디렉토리(`/root/.ollama`)의 호스트측 위치를 전환함.
+
+| 값                         | 동작                                                                                     |
+| :------------------------- | :--------------------------------------------------------------------------------------- |
+| `~/.ollama` (기본)         | 호스트 모델 디렉토리 공유. 호스트에서 `ollama pull`한 모델을 컨테이너에서도 그대로 사용  |
+| `ollama-models`            | docker named volume에 격리. 컨테이너만의 깨끗한 저장소. 호스트와 분리                    |
+| 그 외 절대 경로 / volume명 | 임의 경로 또는 임의 named volume                                                         |
+
+docker compose는 값이 `/`, `~`, `.`로 시작하면 bind mount, 그 외 식별자는 named volume으로 자동 분기함.
+
+## 호스트 코드 마운트 (`MOUNT_CODE_DIR`)
+
+호스트의 코드 폴더를 컨테이너 내 `/home/ubuntu/code`로 마운트하는 옵션. `docker-compose.code.yml` override로 분리되어 있어 필요한 경우에만 적용함.
+
+```bash
+# .env에 설정
+MOUNT_CODE_DIR=~/code
+
+# 실행 시 override 추가
+docker compose -f docker-compose.yml -f docker-compose.code.yml up -d
+```
+
+`MOUNT_CODE_DIR`이 비어 있으면 override 파일을 적용하지 않으면 됨 (기본 `docker-compose.yml`만 사용).
 
 # 모델 설정
 
@@ -166,14 +213,25 @@ qwen3 계열은 현재 작업 디렉토리를 자동 인식하지 못할 수 있
 
 # 환경변수 (자동 주입)
 
-| 변수                                       | 값                          | 설명                  |
-| :----------------------------------------- | :-------------------------- | :-------------------- |
-| `ANTHROPIC_BASE_URL`                       | 모드별 자동 설정            | Ollama API 엔드포인트 |
-| `ANTHROPIC_AUTH_TOKEN`                     | `ollama`                    | 인증 토큰 (더미)      |
-| `ANTHROPIC_MODEL`                          | `.env`의 `OLLAMA_MODEL`     | 기본 사용 모델        |
-| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1`                         | 불필요 트래픽 차단    |
+| 변수                                       | 값                          | 설명                                            |
+| :----------------------------------------- | :-------------------------- | :---------------------------------------------- |
+| `ANTHROPIC_BASE_URL`                       | 모드별 자동 설정            | Ollama API 엔드포인트                           |
+| `ANTHROPIC_AUTH_TOKEN`                     | `ollama`                    | 인증 토큰 (더미)                                |
+| `ANTHROPIC_MODEL`                          | `.env`의 `OLLAMA_MODEL`     | 기본 사용 모델                                  |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1`                         | 불필요 트래픽 차단                              |
+| `OLLAMA_MOUNT`                             | `.env` 값                   | 모델 저장소 위치 (호스트 경로 또는 named volume)|
+| `MOUNT_CODE_DIR`                           | `.env` 값 (선택)            | 호스트 코드 폴더 경로 (override 적용 시)        |
 
 # 트러블슈팅
+
+## .env 누락 시
+
+`docker compose up` 실행 시 변수 미정의 경고:
+
+```bash
+cd 1.OneContainer  # 또는 2.TwoContainer
+cp env.org.sh .env
+```
 
 ## Claude Code 가 Ollama에 연결되지 않을 때
 
@@ -211,18 +269,20 @@ ollamaClaude/
 ├── 1.OneContainer/
 │   ├── Dockerfile
 │   ├── docker-compose.yml
-│   ├── docker-compose.gpu.yml      # GPU override
+│   ├── docker-compose.gpu.yml       # GPU override
+│   ├── docker-compose.code.yml      # NEW: 코드 마운트 override
 │   ├── entrypoint.sh
-│   └── .env -> ../.env             # 루트 .env로 심볼릭 링크
+│   ├── env.org.sh                   # NEW: 커밋된 템플릿
+│   └── .env                         # NEW: 사용자 복사본 (.gitignore)
 ├── 2.TwoContainer/
 │   ├── Dockerfile.claude
 │   ├── docker-compose.yml
-│   ├── docker-compose.gpu.yml      # GPU override
+│   ├── docker-compose.gpu.yml       # GPU override
+│   ├── docker-compose.code.yml      # NEW: 코드 마운트 override
 │   ├── test-setup.sh
-│   └── .env -> ../.env             # 루트 .env로 심볼릭 링크
-├── env                             # .env 템플릿 (커밋됨)
-├── .env                            # OLLAMA_MODEL=...  (SSOT, .gitignore)
+│   ├── env.org.sh                   # NEW: 커밋된 템플릿
+│   └── .env                         # NEW: 사용자 복사본 (.gitignore)
 └── README.md
 ```
 
-`.env` 는 루트에 1개만 두고 각 모드 디렉토리에서 심볼릭 링크로 공유함. 두 모드 모두 동일한 모델 설정을 따름.
+각 컨테이너 폴더가 독립된 `.env`를 보유함 (docker compose 자동 로드). 루트의 공용 `env`/`.env`와 심볼릭 링크는 폐지됨.

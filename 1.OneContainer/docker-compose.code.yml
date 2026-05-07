@@ -1,0 +1,8 @@
+# 코드 폴더 마운트 override
+# 호스트의 ${MOUNT_CODE_DIR} 를 컨테이너 /home/ubuntu/code 로 바인드 마운트함
+# 사용 예:
+#   docker compose -f docker-compose.yml -f docker-compose.code.yml --env-file env.sh up -d
+services:
+  claude:
+    volumes:
+      - ${MOUNT_CODE_DIR}:/home/ubuntu/code
