@@ -30,10 +30,11 @@ PROMPTS.md
 *~
 
 # Project env (커밋 금지) — 각 컨테이너 폴더의 사용자 .env
-# 템플릿: 1.OneContainer/env.org.sh, 2.TwoContainer/env.org.sh (커밋됨)
+# 템플릿: 1.OneContainer/.env.org, 2.TwoContainer/.env.org (커밋됨)
 .env
 .env.*
 !.env.example
+!.env.org
 1.OneContainer/.env
 2.TwoContainer/.env
 *.local

@@ -1,4 +1,4 @@
-name: ollama_claude_one
+name: ${COMPOSE_PROJECT_NAME:-ollama_claude_one}
 
 services:
   claude:
@@ -6,21 +6,25 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: claude
+      args:
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    container_name: ${CLAUDE_CONTAINER_NAME:-claude}
     restart: unless-stopped
     environment:
-      - OLLAMA_FLASH_ATTENTION=1
-      - OLLAMA_KV_CACHE_TYPE=q4_0
-      - OLLAMA_NUM_GPU=999
-      - OLLAMA_CONTEXT_LENGTH=100000
+      - OLLAMA_FLASH_ATTENTION=${OLLAMA_FLASH_ATTENTION:-1}
+      - OLLAMA_KV_CACHE_TYPE=${OLLAMA_KV_CACHE_TYPE:-q8_0}
+      - OLLAMA_NUM_GPU=${OLLAMA_NUM_GPU:-999}
+      - OLLAMA_CONTEXT_LENGTH=${OLLAMA_CONTEXT_LENGTH:-100000}
       - CUDA_VISIBLE_DEVICES=0
       - ANTHROPIC_BASE_URL=http://127.0.0.1:11434
       - ANTHROPIC_AUTH_TOKEN=ollama
       - ANTHROPIC_MODEL=${OLLAMA_MODEL}
       - OLLAMA_MODEL=${OLLAMA_MODEL}
       - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+      - TZ=${TZ:-Asia/Seoul}
     ports:
-      - "11437:11434"
+      - "${OLLAMA_PORT:-11437}:11434"
     volumes:
       - ~/df:/home/ubuntu/df
       - claude-home:/home/ubuntu

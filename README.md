@@ -25,16 +25,16 @@ Ollama 위에서 Claude Code를 실행하는 Docker 환경. 두 가지 구성 �
 ```bash
 # 1.OneContainer
 cd 1.OneContainer
-cp env.org.sh .env
+cp .env.org .env
 vi .env          # OLLAMA_MODEL, OLLAMA_MOUNT, MOUNT_CODE_DIR 수정
 
 # 2.TwoContainer
 cd 2.TwoContainer
-cp env.org.sh .env
+cp .env.org .env
 vi .env
 ```
 
-* `env.org.sh` — 커밋된 템플릿 (shell 변수 형식, KEY=VALUE)
+* `.env.org` — 커밋된 템플릿 (KEY=VALUE 형식)
 * `.env` — 사용자 복사본 (`.gitignore`로 커밋 금지)
 * docker compose가 같은 폴더의 `.env`를 자동 로드하므로 별도 `--env-file` 옵션 불필요
 
@@ -221,6 +221,54 @@ qwen3 계열은 현재 작업 디렉토리를 자동 인식하지 못할 수 있
 | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1`                         | 불필요 트래픽 차단                              |
 | `OLLAMA_MOUNT`                             | `.env` 값                   | 모델 저장소 위치 (호스트 경로 또는 named volume)|
 | `MOUNT_CODE_DIR`                           | `.env` 값 (선택)            | 호스트 코드 폴더 경로 (override 적용 시)        |
+| `OLLAMA_FLASH_ATTENTION`                   | `1` (기본)                  | Flash Attention on/off                          |
+| `OLLAMA_KV_CACHE_TYPE`                     | `q8_0` (기본)               | KV cache 양자화 (`f16`/`q8_0`/`q4_0`)           |
+| `OLLAMA_NUM_GPU`                           | `999` (기본)                | GPU 레이어 수                                   |
+| `OLLAMA_CONTEXT_LENGTH`                    | `100000` (기본)             | 컨텍스트 길이                                   |
+| `TZ`                                       | `Asia/Seoul` (기본)         | 컨테이너 내 타임존 (`date`, git commit, 로그)   |
+| `COMPOSE_PROJECT_NAME`                     | 모드별 기본값               | docker compose 프로젝트명 (충돌 회피)            |
+| `CLAUDE_CONTAINER_NAME` / `OLLAMA_CONTAINER_NAME` | `claude`/`ollama`     | 컨테이너 이름 (다중 인스턴스 시 변경)           |
+| `OLLAMA_PORT`                              | `11437`/`11436`             | 호스트 측 노출 포트                             |
+| `USER_UID` / `USER_GID`                    | `1000` (기본)               | 컨테이너 ubuntu 유저 UID/GID (Dockerfile build) |
+
+# 다중 인스턴스 운영
+
+같은 호스트에서 두 모드를 동시에 띄우거나 여러 카피를 운영하려면 `.env`에서 충돌 가능 변수만 다르게 설정:
+
+```bash
+# 인스턴스 A (.env)
+COMPOSE_PROJECT_NAME=ollama_claude_one_a
+CLAUDE_CONTAINER_NAME=claude_a
+OLLAMA_PORT=11437
+
+# 인스턴스 B (.env, 다른 폴더 복사본)
+COMPOSE_PROJECT_NAME=ollama_claude_one_b
+CLAUDE_CONTAINER_NAME=claude_b
+OLLAMA_PORT=11447
+```
+
+2.TwoContainer는 추가로 `OLLAMA_CONTAINER_NAME`, `OLLAMA_NETWORK_NAME`도 분리.
+
+# UID/GID 매핑 (Linux 호스트 + 코드 마운트)
+
+`MOUNT_CODE_DIR`로 호스트 코드 폴더를 마운트할 때 컨테이너↔호스트 권한 일치를 위해 UID/GID 맞춤:
+
+```bash
+# 호스트 UID/GID 확인
+id -u    # ex) 1001
+id -g    # ex) 1001
+
+# .env 수정
+USER_UID=1001
+USER_GID=1001
+
+# 이미지 재빌드 (build args 변경 반영 필수)
+docker compose build --no-cache
+docker compose up -d
+```
+
+* macOS Docker Desktop은 자동 위임으로 1000 그대로도 OK
+* Linux 호스트는 코드 마운트 시 권한 사고 방지 위해 반드시 일치 권장
 
 # 트러블슈팅
 
@@ -230,7 +278,7 @@ qwen3 계열은 현재 작업 디렉토리를 자동 인식하지 못할 수 있
 
 ```bash
 cd 1.OneContainer  # 또는 2.TwoContainer
-cp env.org.sh .env
+cp .env.org .env
 ```
 
 ## Claude Code 가 Ollama에 연결되지 않을 때
@@ -249,12 +297,14 @@ docker exec claude curl -s http://ollama:11434/api/tags
 ## CUDA OOM 에러 발생 시
 
 * 대형 모델(qwen3-coder:30b, 18GB)은 16GB VRAM에서 CPU/GPU 분할 로드됨
-* 검증된 최적화 환경변수 조합으로 VRAM 내 완전 로드 가능 (compose에 기본 설정됨)
+* 양쪽 모드 모두 `.env`에 다음 변수가 외부화되어 yml 수정 없이 조정 가능:
     - `OLLAMA_FLASH_ATTENTION=1` — Flash Attention 활성화
-    - `OLLAMA_KV_CACHE_TYPE=q8_0` — KV cache 8bit 양자화 (VRAM 절감 핵심)
+    - `OLLAMA_KV_CACHE_TYPE=q8_0` — KV cache 8bit 양자화 (VRAM 절감 균형, 기본)
+        - `f16`: 양자화 없음, 정확도 우선 (24GB+ VRAM)
+        - `q4_0`: 4bit 양자화, VRAM 최소 (8~12GB VRAM, 품질 일부 희생)
     - `OLLAMA_NUM_GPU=999` — 전체 레이어 GPU 로드
     - `OLLAMA_CONTEXT_LENGTH=100000` — 100K context
-* 여전히 OOM 시: `OLLAMA_FLASH_ATTENTION=0`으로 폴백 (성능 저하 감수)
+* 여전히 OOM 시: `OLLAMA_FLASH_ATTENTION=0` 또는 `OLLAMA_KV_CACHE_TYPE=q4_0`로 폴백
 
 ## 모델 전환이 느릴 때
 
@@ -272,7 +322,7 @@ ollamaClaude/
 │   ├── docker-compose.gpu.yml       # GPU override
 │   ├── docker-compose.code.yml      # NEW: 코드 마운트 override
 │   ├── entrypoint.sh
-│   ├── env.org.sh                   # NEW: 커밋된 템플릿
+│   ├── .env.org                     # NEW: 커밋된 템플릿
 │   └── .env                         # NEW: 사용자 복사본 (.gitignore)
 ├── 2.TwoContainer/
 │   ├── Dockerfile.claude
@@ -280,7 +330,7 @@ ollamaClaude/
 │   ├── docker-compose.gpu.yml       # GPU override
 │   ├── docker-compose.code.yml      # NEW: 코드 마운트 override
 │   ├── test-setup.sh
-│   ├── env.org.sh                   # NEW: 커밋된 템플릿
+│   ├── .env.org                     # NEW: 커밋된 템플릿
 │   └── .env                         # NEW: 사용자 복사본 (.gitignore)
 └── README.md
 ```

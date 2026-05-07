@@ -1,5 +1,8 @@
 FROM debian:bookworm-slim
 
+ARG USER_UID=1000
+ARG USER_GID=1000
+
 # 환경변수
 ENV LC_ALL=C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
@@ -7,9 +10,9 @@ ENV ANTHROPIC_BASE_URL=http://ollama:11434
 ENV ANTHROPIC_AUTH_TOKEN=ollama
 ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
-# Node.js 22 설치
+# Node.js 22 + tzdata (TZ 환경변수 적용용 zoneinfo)
 RUN apt-get update && \
-    apt-get install -y curl git netcat-traditional && \
+    apt-get install -y curl git netcat-traditional tzdata && \
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -17,9 +20,9 @@ RUN apt-get update && \
 # Claude Code 설치
 RUN npm install -g @anthropic-ai/claude-code
 
-# ubuntu 유저 생성 (UID 1000)
-RUN groupadd -g 1000 ubuntu && \
-    useradd -m -u 1000 -g 1000 -s /bin/bash ubuntu
+# ubuntu 유저 생성 (UID/GID 가변, 기본 1000 — 호스트 사용자와 일치 권장)
+RUN groupadd -g ${USER_GID} ubuntu && \
+    useradd -m -u ${USER_UID} -g ${USER_GID} -s /bin/bash ubuntu
 
 # ubuntu용 .claude 디렉토리 생성
 RUN mkdir -p /home/ubuntu/.claude
