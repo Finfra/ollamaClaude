@@ -227,6 +227,7 @@ qwen3 계열은 현재 작업 디렉토리를 자동 인식하지 못할 수 있
 | `OLLAMA_CONTEXT_LENGTH`                    | `100000` (기본)             | 컨텍스트 길이                                   |
 | `TZ`                                       | `Asia/Seoul` (기본)         | 컨테이너 내 타임존 (`date`, git commit, 로그)   |
 | `COMPOSE_PROJECT_NAME`                     | 모드별 기본값               | docker compose 프로젝트명 (충돌 회피)            |
+| `COMPOSE_FILE`                             | (미설정)                    | 콜론 구분 yml 자동 포함 (예: `docker-compose.yml:docker-compose.gpu.yml`) |
 | `CLAUDE_CONTAINER_NAME` / `OLLAMA_CONTAINER_NAME` | `claude`/`ollama`     | 컨테이너 이름 (다중 인스턴스 시 변경)           |
 | `OLLAMA_PORT`                              | `11437`/`11436`             | 호스트 측 노출 포트                             |
 | `USER_UID` / `USER_GID`                    | `1000` (기본)               | 컨테이너 ubuntu 유저 UID/GID (Dockerfile build) |
@@ -292,6 +293,67 @@ docker exec claude curl -s http://127.0.0.1:11434/api/tags
 
 # Ollama 연결 테스트 (2.TwoContainer)
 docker exec claude curl -s http://ollama:11434/api/tags
+```
+
+## GPU 가 적용되지 않을 때 (Linux + NVIDIA)
+
+기본 `docker compose up -d` 만 실행하면 [docker-compose.gpu.yml](1.OneContainer/docker-compose.gpu.yml) override 가 빠져 컨테이너가 **CPU 추론으로 떨어진다**. NVIDIA Container Toolkit 이 설치되어 있어도 마찬가지 — compose 가 GPU yml 을 읽지 않으면 디바이스가 컨테이너로 전달되지 않음.
+
+### 진단
+
+```bash
+# 1) 컨테이너에 GPU 디바이스 요청이 박혔는지
+docker inspect claude --format '{{json .HostConfig.DeviceRequests}}'
+#   기대: [{"Driver":"nvidia","Count":-1,"Capabilities":[["gpu"]]}]
+#   null → GPU 미적용
+
+# 2) 모델이 어디서 도는지
+docker exec claude ollama ps
+#   PROCESSOR 컬럼이 "100% GPU" 여야 정상 ("100% CPU" 면 미적용)
+
+# 3) 호스트에서 ollama 프로세스 GPU 사용 확인
+nvidia-smi
+```
+
+### 해결 — gpu.yml 포함해 재생성
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --force-recreate
+```
+
+`--force-recreate` 필수: `DeviceRequests` 는 **컨테이너 생성 시점에만** 박히므로 `docker compose restart` 나 단순 `up -d` 로는 반영되지 않는다 (이미 실행 중이면 noop).
+
+### 영구 자동화 — `COMPOSE_FILE` env
+
+매번 `-f` 두 번 지정이 번거로우면 `.env` 끝에 추가:
+
+```bash
+# .env
+COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+```
+
+이후 `docker compose up -d` 만으로 GPU override 자동 포함. 코드 마운트까지 같이 쓰려면 콜론으로 추가:
+
+```bash
+COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml:docker-compose.code.yml
+```
+
+> NVIDIA 없는 머신과 `.env` 를 공유한다면 머신별로 분리할 것 (GPU 없는 호스트에서 기동 실패함).
+
+### alias `dcu = docker-compose up` 사용 시 주의
+
+alias 가 이미 `up` 까지 포함하면 `-f` 옵션을 끼울 자리가 없다 — `-f` 는 `up` **앞** 글로벌 위치에 와야 하기 때문. alias 를 그대로 쓰려면 위 `COMPOSE_FILE` env 방법이 유일한 해법.
+
+```bash
+# ✗ 동작 안 함 — `up` 뒤에 -f 가 오면 잘못된 위치
+dcu -f docker-compose.gpu.yml -d
+
+# ✓ alias 우회해서 풀 명령
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --force-recreate
+
+# ✓ COMPOSE_FILE 설정 후 alias 그대로
+export COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+dcu -d --force-recreate
 ```
 
 ## CUDA OOM 에러 발생 시

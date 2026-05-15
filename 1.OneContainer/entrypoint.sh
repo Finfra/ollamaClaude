@@ -1,7 +1,9 @@
 #!/bin/bash
+# 컨테이너 PID 1 — 이미 USER=ubuntu 로 실행됨 (Dockerfile USER ubuntu)
+#   - ollama 는 ubuntu 의 $HOME/.ollama 를 모델 디렉토리로 사용
+#   - 11434 는 비특권 포트, GPU 는 nvidia-container-toolkit 가 노출하므로 root 불필요
 set -e
 
-# ollama serve는 root 권한으로 실행 (GPU/포트 접근 필요)
 /bin/ollama serve &
 OLLAMA_PID=$!
 
@@ -15,9 +17,9 @@ if [ -n "$OLLAMA_MODEL" ]; then
   ollama pull "$OLLAMA_MODEL" || echo "[entrypoint] WARNING: model pull failed: $OLLAMA_MODEL"
 fi
 
-# ubuntu 유저용 settings.json 생성
-mkdir -p /home/ubuntu/.claude
-cat > /home/ubuntu/.claude/settings.json <<JSON
+# ubuntu 의 claude settings.json 생성
+mkdir -p "$HOME/.claude"
+cat > "$HOME/.claude/settings.json" <<JSON
 {
   "model": "${OLLAMA_MODEL:-}",
   "env": {
@@ -26,7 +28,5 @@ cat > /home/ubuntu/.claude/settings.json <<JSON
   }
 }
 JSON
-chown -R ubuntu:ubuntu /home/ubuntu/.claude
 
-# ubuntu 유저로 권한 드롭 후 CMD 실행
-exec gosu ubuntu "$@"
+exec "$@"
