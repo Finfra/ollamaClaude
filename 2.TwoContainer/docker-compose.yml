@@ -1,4 +1,4 @@
-name: ${COMPOSE_PROJECT_NAME:-ollama_claude_two}
+name: ${COMPOSE_PROJECT_NAME:-air_gap_claude_code_two}
 
 services:
   ollama:

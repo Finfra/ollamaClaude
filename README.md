@@ -1,12 +1,12 @@
 ---
 name: README
-description: Ollama + Claude Code Docker 통합 환경 가이드
+description: air-gap-claudeCode — 폐쇄망·오프라인 Claude Code 구동 Docker 환경 가이드
 date: 2026-05-07
 ---
 
 # 개요
 
-Ollama 위에서 Claude Code를 실행하는 Docker 환경. 두 가지 구성 중 선택해서 사용함.
+**air-gap-claudeCode** — 폐쇄망(air-gap)·오프라인 환경에서 Claude Code 를 구동하기 위한 Docker 환경. 로컬 LLM 백엔드로 Ollama 를 사용하여, 외부 네트워크 없이 모델 추론을 수행함. 두 가지 구성 중 선택해서 사용함.
 
 | 디렉토리         | 구성                  | 용도                                                              |
 | :--------------- | :-------------------- | :---------------------------------------------------------------- |
@@ -238,12 +238,12 @@ qwen3 계열은 현재 작업 디렉토리를 자동 인식하지 못할 수 있
 
 ```bash
 # 인스턴스 A (.env)
-COMPOSE_PROJECT_NAME=ollama_claude_one_a
+COMPOSE_PROJECT_NAME=air_gap_claude_code_one_a
 CLAUDE_CONTAINER_NAME=claude_a
 OLLAMA_PORT=11437
 
 # 인스턴스 B (.env, 다른 폴더 복사본)
-COMPOSE_PROJECT_NAME=ollama_claude_one_b
+COMPOSE_PROJECT_NAME=air_gap_claude_code_one_b
 CLAUDE_CONTAINER_NAME=claude_b
 OLLAMA_PORT=11447
 ```
@@ -377,7 +377,7 @@ dcu -d --force-recreate
 # 파일 구조
 
 ```
-ollamaClaude/
+air-gap-claudeCode/
 ├── 1.OneContainer/
 │   ├── Dockerfile
 │   ├── docker-compose.yml
