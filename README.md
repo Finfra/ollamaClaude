@@ -6,12 +6,13 @@ date: 2026-05-07
 
 # 개요
 
-**air-gap-claudeCode** — 폐쇄망(air-gap)·오프라인 환경에서 Claude Code 를 구동하기 위한 Docker 환경. 로컬 LLM 백엔드로 Ollama 를 사용하여, 외부 네트워크 없이 모델 추론을 수행함. 두 가지 구성 중 선택해서 사용함.
+**air-gap-claudeCode** — 폐쇄망(air-gap)·오프라인 환경에서 Claude Code 를 구동하기 위한 Docker 환경. 로컬 LLM 백엔드로 Ollama 를 사용하여, 외부 네트워크 없이 모델 추론을 수행함. 세 가지 구성 중 선택해서 사용함.
 
 | 디렉토리         | 구성                  | 용도                                                              |
 | :--------------- | :-------------------- | :---------------------------------------------------------------- |
-| `1.OneContainer` | 단일 컨테이너         | 빠른 시작·로컬 개발. Ollama + Claude Code가 한 컨테이너에 동거    |
-| `2.TwoContainer` | 분리 컨테이너 2개     | 운영·다중 클라이언트. Ollama 서비스를 독립시켜 재시작·공유 용이   |
+| `1.ollama_OneContainer` | 단일 컨테이너         | 빠른 시작·로컬 개발. Ollama + Claude Code가 한 컨테이너에 동거    |
+| `2.ollama_TwoContainer` | 분리 컨테이너 2개     | 운영·다중 클라이언트. Ollama 서비스를 독립시켜 재시작·공유 용이   |
+| `3.ollama_External`     | claude 컨테이너 1개   | 호스트/서버에 이미 설치된 외부 Ollama 에 claude 컨테이너만 연결 (일반 방식) |
 
 공통 사전 요구사항:
 * Docker / Docker Compose (v2 권장 — `.env` 자동 로드 + 틸드 확장 지원)
@@ -23,22 +24,27 @@ date: 2026-05-07
 각 컨테이너 폴더에 독립된 `.env`를 두는 방식 (이전 루트 공용 `.env` + 심볼릭 링크 폐기).
 
 ```bash
-# 1.OneContainer
-cd 1.OneContainer
+# 1.ollama_OneContainer
+cd 1.ollama_OneContainer
 cp .env.org .env
 vi .env          # OLLAMA_MODEL, OLLAMA_MOUNT, MOUNT_CODE_DIR 수정
 
-# 2.TwoContainer
-cd 2.TwoContainer
+# 2.ollama_TwoContainer
+cd 2.ollama_TwoContainer
 cp .env.org .env
 vi .env
+
+# 3.ollama_External
+cd 3.ollama_External
+cp .env.org .env
+vi .env          # OLLAMA_HOST(외부 Ollama 주소), OLLAMA_MODEL 수정
 ```
 
 * `.env.org` — 커밋된 템플릿 (KEY=VALUE 형식)
 * `.env` — 사용자 복사본 (`.gitignore`로 커밋 금지)
 * docker compose가 같은 폴더의 `.env`를 자동 로드하므로 별도 `--env-file` 옵션 불필요
 
-# 1.OneContainer
+# 1.ollama_OneContainer
 
 ## 용도
 
@@ -59,7 +65,7 @@ vi .env
 ## 사용법
 
 ```bash
-cd 1.OneContainer
+cd 1.ollama_OneContainer
 
 # Mac / Linux CPU 모드
 docker compose up -d --build
@@ -79,7 +85,7 @@ cc          # alias = claude --dangerously-skip-permissions
 
 > 처음 한 번은 퍼미션 오류가 날 수 있음. 두 번째 실행부터 정상 동작.
 
-# 2.TwoContainer
+# 2.ollama_TwoContainer
 
 ## 용도
 
@@ -102,7 +108,7 @@ cc          # alias = claude --dangerously-skip-permissions
 ## 사용법
 
 ```bash
-cd 2.TwoContainer
+cd 2.ollama_TwoContainer
 
 # Mac / Linux CPU 모드
 docker compose up -d --build
@@ -123,18 +129,62 @@ cc
 docker compose restart ollama
 ```
 
+# 3.ollama_External
+
+## 용도
+
+* 호스트(또는 원격 서버)에 **이미 Ollama가 설치·운영 중**인 환경 (systemd 등)에 Claude Code 컨테이너만 추가로 붙이는, 실무에서 가장 흔한 '일반 방식'
+* Ollama를 컨테이너로 다시 띄우지 않으므로 모델·GPU·튜닝을 호스트 Ollama에 일임
+* 여러 머신·팀이 공용으로 쓰는 중앙 Ollama 서버에 클라이언트만 늘리고 싶은 경우
+
+## 특징
+
+* 컨테이너 1개(`claude`)만 존재 — Ollama 컨테이너 없음
+* `claude` 컨테이너: `debian:bookworm-slim` 기반 경량 Claude Code 전용 이미지 (`2.ollama_TwoContainer`의 `Dockerfile.claude`와 동일 계열)
+* 외부 Ollama 연결: `ANTHROPIC_BASE_URL=http://${OLLAMA_HOST}:${OLLAMA_PORT_EXT}` (기본 `host.docker.internal:11434`)
+* `extra_hosts: host.docker.internal:host-gateway` 로 Linux 호스트에서도 호스트 Ollama 해석 (macOS/Windows는 자동)
+* 호스트 포트 매핑 없음 — 컨테이너가 Ollama를 노출하지 않음 (외부 Ollama가 이미 11434 제공)
+* `entrypoint.sh`: 외부 Ollama 도달 확인(`nc`) + `settings.json` 동적 생성. 컨테이너 내부에서 `ollama serve`·모델 pull 하지 않음
+* 모델은 **호스트에서 선(先) pull** 필요 (`ollama pull <model>`)
+* 볼륨:
+    - `~/df → /home/ubuntu/df` (작업 폴더)
+    - `claude-home → /home/ubuntu` (Claude 홈 영속화)
+
+> **호스트 Ollama 바인드 주의**: 컨테이너에서 접근하려면 호스트 Ollama가 `0.0.0.0`에 바인드되어야 함. systemd 사용 시 `Environment=OLLAMA_HOST=0.0.0.0` 설정 후 `systemctl restart ollama`. (기본 `127.0.0.1` 바인드면 컨테이너에서 연결 불가)
+
+## 사용법
+
+```bash
+cd 3.ollama_External
+
+# 외부 Ollama(호스트) 연결 — GPU override 불필요 (GPU는 호스트 Ollama 소관)
+docker compose up -d --build
+
+# 호스트 코드 폴더 마운트 (선택)
+docker compose -f docker-compose.yml -f docker-compose.code.yml up -d --build
+
+# 컨테이너 접속 (ubuntu 유저, 기본 유저)
+docker exec -it claude bash
+
+# 컨테이너 내부에서 Claude Code 실행
+cc          # alias = claude --dangerously-skip-permissions
+
+# 원격 서버 Ollama 사용 시: .env 에서 OLLAMA_HOST=<서버IP> 로 변경 후 재기동
+```
+
 # 모드 비교 요약
 
-| 항목                | 1.OneContainer                                                  | 2.TwoContainer                                                  |
-| :------------------ | :-------------------------------------------------------------- | :-------------------------------------------------------------- |
-| 컨테이너 수         | 1                                                               | 2 (`ollama`, `claude`)                                          |
-| Ollama 접근 (내부)  | `http://127.0.0.1:11434`                                        | `http://ollama:11434`                                           |
-| Ollama 접근 (호스트)| `http://localhost:11437`                                        | `http://localhost:11436`                                        |
-| 베이스 이미지       | `ollama/ollama` (확장)                                          | `ollama/ollama` + `debian:bookworm-slim`                        |
-| Ollama 단독 재시작  | 불가 (claude까지 같이 내려감)                                    | 가능                                                            |
-| 다중 클라이언트 공유| 어려움                                                          | 용이                                                            |
-| 모델 저장소 토글    | `OLLAMA_MOUNT` (공유: `~/.ollama` / 격리: `ollama-models`)      | 동일                                                            |
-| 코드 폴더 마운트    | `MOUNT_CODE_DIR` + `docker-compose.code.yml`                    | 동일                                                            |
+| 항목                | 1.ollama_OneContainer                                          | 2.ollama_TwoContainer                                          | 3.ollama_External                                              |
+| :------------------ | :------------------------------------------------------------- | :------------------------------------------------------------- | :------------------------------------------------------------- |
+| 컨테이너 수         | 1                                                              | 2 (`ollama`, `claude`)                                         | 1 (`claude` — Ollama는 호스트)                                 |
+| Ollama 접근 (내부)  | `http://127.0.0.1:11434`                                       | `http://ollama:11434`                                          | `http://host.docker.internal:11434` (`OLLAMA_HOST` 변수화)     |
+| Ollama 접근 (호스트)| `http://localhost:11437`                                       | `http://localhost:11436`                                       | 호스트 Ollama 직접 (`localhost:11434`)                         |
+| 베이스 이미지       | `ollama/ollama` (확장)                                         | `ollama/ollama` + `debian:bookworm-slim`                       | `debian:bookworm-slim` (claude만)                              |
+| Ollama 구동 주체    | 컨테이너                                                       | 컨테이너                                                       | 호스트/원격 서버 (선설치)                                      |
+| Ollama 단독 재시작  | 불가 (claude까지 같이 내려감)                                  | 가능                                                           | 해당 없음 (호스트가 관리)                                      |
+| 다중 클라이언트 공유| 어려움                                                        | 용이                                                           | 매우 용이 (중앙 Ollama 공용)                                   |
+| 모델 저장소 토글    | `OLLAMA_MOUNT` (공유: `~/.ollama` / 격리: `ollama-models`)     | 동일                                                           | 해당 없음 (호스트 Ollama 소관)                                 |
+| 코드 폴더 마운트    | `MOUNT_CODE_DIR` + `docker-compose.code.yml`                   | 동일                                                           | 동일                                                           |
 
 # 마운트 옵션
 
@@ -248,7 +298,7 @@ CLAUDE_CONTAINER_NAME=claude_b
 OLLAMA_PORT=11447
 ```
 
-2.TwoContainer는 추가로 `OLLAMA_CONTAINER_NAME`, `OLLAMA_NETWORK_NAME`도 분리.
+2.ollama_TwoContainer는 추가로 `OLLAMA_CONTAINER_NAME`, `OLLAMA_NETWORK_NAME`도 분리.
 
 # UID/GID 매핑 (Linux 호스트 + 코드 마운트)
 
@@ -278,7 +328,7 @@ docker compose up -d
 `docker compose up` 실행 시 변수 미정의 경고:
 
 ```bash
-cd 1.OneContainer  # 또는 2.TwoContainer
+cd 1.ollama_OneContainer  # 또는 2.ollama_TwoContainer
 cp .env.org .env
 ```
 
@@ -288,16 +338,16 @@ cp .env.org .env
 # 환경변수 확인
 docker exec claude bash -c 'echo $ANTHROPIC_BASE_URL'
 
-# Ollama 연결 테스트 (1.OneContainer)
+# Ollama 연결 테스트 (1.ollama_OneContainer)
 docker exec claude curl -s http://127.0.0.1:11434/api/tags
 
-# Ollama 연결 테스트 (2.TwoContainer)
+# Ollama 연결 테스트 (2.ollama_TwoContainer)
 docker exec claude curl -s http://ollama:11434/api/tags
 ```
 
 ## GPU 가 적용되지 않을 때 (Linux + NVIDIA)
 
-기본 `docker compose up -d` 만 실행하면 [docker-compose.gpu.yml](1.OneContainer/docker-compose.gpu.yml) override 가 빠져 컨테이너가 **CPU 추론으로 떨어진다**. NVIDIA Container Toolkit 이 설치되어 있어도 마찬가지 — compose 가 GPU yml 을 읽지 않으면 디바이스가 컨테이너로 전달되지 않음.
+기본 `docker compose up -d` 만 실행하면 [docker-compose.gpu.yml](1.ollama_OneContainer/docker-compose.gpu.yml) override 가 빠져 컨테이너가 **CPU 추론으로 떨어진다**. NVIDIA Container Toolkit 이 설치되어 있어도 마찬가지 — compose 가 GPU yml 을 읽지 않으면 디바이스가 컨테이너로 전달되지 않음.
 
 ### 진단
 
@@ -378,7 +428,7 @@ dcu -d --force-recreate
 
 ```
 air-gap-claudeCode/
-├── 1.OneContainer/
+├── 1.ollama_OneContainer/
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   ├── docker-compose.gpu.yml       # GPU override
@@ -386,7 +436,7 @@ air-gap-claudeCode/
 │   ├── entrypoint.sh
 │   ├── .env.org                     # NEW: 커밋된 템플릿
 │   └── .env                         # NEW: 사용자 복사본 (.gitignore)
-├── 2.TwoContainer/
+├── 2.ollama_TwoContainer/
 │   ├── Dockerfile.claude
 │   ├── docker-compose.yml
 │   ├── docker-compose.gpu.yml       # GPU override
