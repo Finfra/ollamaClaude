@@ -1,0 +1,16 @@
+# GPU override — LMS 백엔드 풀에 NVIDIA GPU 할당
+# 사용 예 (같은 폴더의 .env 자동 로드):
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build --scale lms=2
+#
+# ⚠️ count: all 은 모든 lms 복제본이 동일 GPU 집합을 봄(단일 GPU VRAM 분할 시나리오).
+#    다중 GPU 핀(1 GPU = 1 백엔드)이 필요하면 --scale 대신 명시적 lms-1/lms-2 서비스로
+#    각각 device_ids 를 지정해야 함 (SSOT GPU 분배 표 + nginx.conf.template 정적 upstream 주석 참조).
+services:
+  lms:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

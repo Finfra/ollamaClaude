@@ -30,7 +30,7 @@ PROMPTS.md
 *~
 
 # Project env (커밋 금지) — 각 컨테이너 폴더의 사용자 .env
-# 템플릿: 1.ollama_OneContainer/.env.org, 2.ollama_TwoContainer/.env.org, 3.ollama_External/.env.org (커밋됨)
+# 템플릿: 1.ollama_OneContainer/.env.org, 2.ollama_TwoContainer/.env.org, 3.ollama_External/.env.org, 4.1.lms_OneLLM/.env.org, 5.lms_MultiLLM/.env.org (커밋됨)
 .env
 .env.*
 !.env.example
@@ -38,6 +38,8 @@ PROMPTS.md
 1.ollama_OneContainer/.env
 2.ollama_TwoContainer/.env
 3.ollama_External/.env
+4.1.lms_OneLLM/.env
+5.lms_MultiLLM/.env
 *.local
 
 # Logs
@@ -52,6 +54,7 @@ Desktop.ini
 
 # Archives
 *.zip
+*.tar
 *.tar.gz
 *.rar
 *.7z
@@ -88,3 +91,10 @@ z_old/
 # Gemini CLI
 GEMINI.md
 _doc_work/z_htm/
+
+# lms:small 빌드 컨텍스트 (모델 gguf 대용량 + entrypoint 복사본)
+5.lms_MultiLLM/build.small/
+6.lms_MultiLLM_run/build.small/
+
+# 방어적 백업 폴더
+6.lms_MultiLLM_run_backup/

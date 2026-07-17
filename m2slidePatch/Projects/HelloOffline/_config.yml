@@ -1,0 +1,4 @@
+# HelloOffline — 폐쇄망 동작 확인용 최소 예제 (m2slidePatch 스모크 테스트)
+theme: default
+theme_default_layout: contents
+cover_enabled: true
