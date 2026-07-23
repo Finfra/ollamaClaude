@@ -1,0 +1,31 @@
+# Dockerfile.cuda11fix — lms 이미지에 CUDA 11 런타임을 링커 경로에 노출하는 얇은 오버레이
+#
+# 근본 원인(하드 증거로 확정):
+#   lms:latest/lms:small 이미지 안에는 libcudart.so.11.0 / libcublas.so.11 이 이미 존재한다
+#   (LM Studio 가 install.sh 로 번들 —
+#    /home/lms/.lmstudio/extensions/backends/vendor/linux-llama-cuda-vendor-v1/).
+#   그러나 이 vendor 디렉토리가 ldconfig 검색 경로에 없어서 CUDA 백엔드의
+#   libggml-cuda.so 가 로드 시 libcudart.so.11.0 을 못 찾고 엔진이 죽는다:
+#     ldd libggml-cuda.so →  libcudart.so.11.0 => not found   (수정 전)
+#
+# 이 오버레이는 그 vendor 디렉토리를 /etc/ld.so.conf.d 에 등록하고 ldconfig 를 갱신한다.
+#   ldd libggml-cuda.so →  libcudart.so.11.0 => .../vendor/.../libcudart.so.11.0   (수정 후)
+#   → 7.lms_MultiLLM_run_v2/step4 entrypoint.lms.sh 의 CUDA 프리플라이트
+#     (ldconfig -p | grep libcudart.so.11) 통과.
+#   ※ libcuda.so.1(드라이버)은 여기서 해결하지 않는다 — 런타임에 --gpus 로
+#     nvidia-container-toolkit 이 주입한다. 호스트 CUDA 설치 불필요.
+#
+# 사용: ./build_cuda11fix.sh [BASE] [OUT]   (기본 lms:small → lms:small-cuda11fix)
+
+ARG BASE=lms:small
+FROM ${BASE}
+
+USER root
+RUN set -eux; \
+    lib="$(find /home/lms/.lmstudio/extensions/backends/vendor -name 'libcudart.so.11*' -print -quit)"; \
+    test -n "$lib"; \
+    dir="$(dirname "$lib")"; \
+    echo "$dir" > /etc/ld.so.conf.d/lms-cuda11.conf; \
+    ldconfig; \
+    ldconfig -p | grep -q 'libcudart\.so\.11'
+USER lms
