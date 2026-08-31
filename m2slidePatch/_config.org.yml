@@ -1,0 +1,88 @@
+# m2slide 설정
+#      _doc_work/z_done/_config.org.yml 에 추가 설명
+
+# 프로젝트 경로: Projects/{current_project}
+
+# current_project: MarkdownGraph
+theme: default                   # theme/{name}/slide.css + layouts/ (default 외에는 .gitignore 처리)
+theme_default_layout: contents   # 슬라이드 기본 layout (모든 본문 슬라이드를 layout-_contents로 wrap → §2 노랑 가로선 적용)
+cover_enabled: true              # true 시 첫 파일 첫 슬라이드 위치에 cover 자동 주입
+toc_placeholder: true            # true 시 모든 파일에 #/0 TOC 슬라이드 강제 삽입(Chapter모드에서 Only)
+cards_placeholder: true          # true 시 H1 챕터 타이틀 슬라이드를 Cards Page(autoToc cards, layout-_cards)로 변환 / false 시 H1 슬라이드 자체를 deck에서 제거 (Issue144)
+top_align: false                 # true 시 reveal.js 중앙정렬 덮어쓰고 'top-align-mode' 클래스 적용 (주의)
+markmap_depth: 2                 # Markmap 초기 펼침 깊이 (1=루트+1단계, 2=2단계까지)
+chapter_markmap_depth: 3         # 챕터별 페이지 Markmap 펼침 깊이 (markmap_depth+1 권장)
+head_left: d1                    # Issue141: _contents head-bar 좌측: d1~d99 절대 depth | now (breadcrumb) | none (비표시)
+head_right: now                  # Issue141: _contents head-bar 우측: 동일 옵션. now는 다른 head 옵션 d{m}이면 d{m+1}부터 현재까지 ' > ' 연결
+head_breadcum: true              # Breadcum
+title_contents_gap: 30           # title↔contents 갭 (title 높이의 %)
+auto_layout_detect: true         # false: 자동 감지 비활성화 (모든 슬라이드는 default layout 사용)
+
+# `![alt](path.mp4)` 형태로 작성하면 <video> 태그로 자동 변환됨
+# controls, autoplay-muted, autoplay-loop, loop, muted, background, minimal, autoplay-nocontrols
+video_default: controls       # 컨트롤만, 자동재생 없음 (기본 권장)
+guide_line: false             # 레이아웃 디버깅용 가이드 라인 표시
+use_open_props: false         # Open Props CDN 로드 (false=기본값 사용)
+slide_ratio: "3:2"            # 16:9 (default) | 3:2 | fill (비율 무제약). Issue63: --slide-ratio 변수로 노출됨. Issue65: 화이트리스트 외 입력은 빌드 실패
+slide_outer_padding: 0        # outer padding (슬라이드↔뷰포트 대칭). CSS length (예: 0, 20px, 2vh) — body padding에 적용 (Issue85: 4면 균등)
+slide_inner_padding: 0        # inner padding (콘텐츠↔슬라이드 경계 대칭). CSS length — section padding에 적용
+
+page_number_mode: global      # global (default) = 전역 누적 + breadcrumb / local = 챕터별 c/t (Reveal 기본)
+breadcrumb: true              # true (default) = 챕터번호 prefix 표시 (page_number_mode: global일 때만 의미)
+                              # 출력 예: '3 › 9 / 19' (chapter 3, 전역 9번째 / 총 19) — breadcrumb=false 시 '9 / 19'
+
+nav_indicator: both           # both (default) = 마름모(↑/↓) + ←/→ + 페이지번호 모두 표시
+                              # diamond = 마름모 + ←/→만 (페이지번호 숨김)
+                              # page = 페이지번호만 (마름모 + ←/→ 모두 숨김)
+
+# nav_color: auto             # 우측 하단 네비게이터(마름모 화살표 + 페이지번호) 색
+                              #   auto (default) = 테마 자동(--kn-page-num-color) / light = 밝은색 / dark = 어두운색 / <css-color>
+# htmlart_line_color: auto    # Issue274: htmlArt(SmartArt) 연결선·화살표·박스 테두리(지시 도형) 색
+                              #   auto (default) = 테마 자동(--m2-line, 미설정 시 하드코딩) / light = 밝은 선(다크 배경용)
+                              #   / dark = 어두운 선(라이트 배경용) / <css-color> (예: "#ffcc00", "rgba(255,255,255,0.7)")
+
+# 슬라이드 전환·배경 트랜지션 전역 기본값 (reveal.js Reveal.initialize에 그대로 전달)
+#   - default_transition            : 일반 페이지
+#   - default_background_transition : 첫페이지나 마지막 페이지
+#       none / fade / slide / convex / concave / zoom
+#   - default_transition_speed: default / fast / slow
+animation:
+  default_transition: convex
+  default_transition_speed: default
+  default_background_transition: zoom
+
+
+# 스타일 설정 (Issue64 1.b 정책)
+# - 기본값은 lib/css/base.css :root에 정의됨. lib/config.js styleConfig가 동일값으로 동기화됨.
+# - 본 섹션은 기본값에서 벗어나는 override만 명시.
+# - 자주 바꾸는 키(font_size, font_family)는 주석으로 가이드만 표시 (필요 시 주석 해제 후 값 변경).
+# - font_import[]는 base.css @import에 추가 로드되는 legacy 호환 (필요 시 추가).
+style:
+  theContents:
+    # font_family: 'Nanum Gothic Coding'   # 기본값 (override 시 주석 해제)
+    # font_size: 1em                       # 기본값 (override 시 주석 해제)
+    font_size_auto: true              # true=자동 조절, false=원래 크기 유지
+    font_size_min: 20px               # 자동 조절 시 최소 폰트 크기
+    font_size_max_ratio: 0.66         # 본문 최대 = 제목 × 비율 (과확대 방지)
+    media_container_enlarge: fit      # 이미지/SVG 크기 조절 (original/width/height/fit)
+
+# 목차·구조 추가 옵션 (프로젝트에서 사용 중이던 기존 키 문서화)
+# palette: default              # 컬러 팔레트 variant (default | warm | cool | mono | office_rainbow). Issue210
+# cover_layout: _cover          # cover 슬라이드 layout override (기본 _cover). Issue119
+# agenda_enabled: true          # agenda.html 생성 + 챕터 back navigation (기본 true)
+# agenda_card_mode: false       # agenda.html(/n/a) 을 markmap 대신 카드 그리드로 렌더
+# toc_card_mode: false          # toc_placeholder Map Slide를 markmap SVG 대신 H1 카드 그리드로 렌더
+# agenda_title: Agenda          # agenda 페이지 헤더 타이틀 (AGENDA.md frontmatter agenda_title 우선)
+# card_columns: 3               # ::: cards 그리드 열 수 (1~12). 미설정 시 auto-fit(콘텐츠 폭 자동)
+# contents_balance: top         # .contents-body 세로 분산 (top | center). center = 텍스트 슬라이드 본문 세로 중앙 분산 opt-in. Issue284
+
+# background: none            # 전역 슬라이드 배경: none | #hex 색 | 이미지경로(.png/.jpg/.svg…) | 비디오경로(.mp4/.webm…). hex는 "#1a1a2e" 처럼 따옴표 권장
+
+# 다이어그램·빌드·배포 (Issue270 asset_mode / deploy-docs)
+# kroki_server: https://kroki.io   # 다이어그램 렌더링 서버 endpoint (ditaa 등)
+# asset_mode: vendor            # 런타임 자산 배치: vendor(기본, self-contained 오프라인) | cdn(발행 데크 웹 서빙)
+# deploy_formats: []            # /deploy-docs 시 함께 빌드·배포할 형식 (예: [epub, pdf, pptx])
+
+# license_attribution: true     # Issue292: 첫 장·마지막 장 "Powered by finfra.kr, Made by m2slide" 표기(CC BY 4.0 조건). false 시 위법 소지 경고 로그. 설계: _doc_arch/license-attribution.md
+
+# 참고: mode_hint 키는 소비처가 없는 orphan (GenContentProd 1곳 잔존) — 정리 대상, 신규 사용 금지

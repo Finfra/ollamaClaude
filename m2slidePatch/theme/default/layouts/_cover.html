@@ -1,0 +1,53 @@
+<!-- @meta
+description: 첫 슬라이드·섹션 표지 layout. 제목 + 부제 + 발표자 + 강의일·버전 + QR 코드. cover_enabled=true 시 자동 주입.
+recommended_for:
+  - 강의 첫 슬라이드 (표지)
+  - 챕터 시작 슬라이드
+  - 발표자·강의일 메타 표시
+not_recommended_for:
+  - 본문 콘텐츠 슬라이드
+  - 코드·다이어그램 슬라이드
+slots:
+  - title
+  - subtitle
+  - part_subtitle
+  - instructor_name
+  - instructor_contact
+  - lecture_date
+  - version
+  - qr_code_path
+  - qr_url
+example: |
+  ## 강의 제목
+
+  ::: subtitle
+  부제목
+  :::
+-->
+<section class="layout-_cover">
+  <div class="cover-corner cover-tl">{{github_url}}</div>
+  <div class="cover-corner cover-tr">{{version_badge}}</div>
+  <div class="cover-corner cover-br">{{homepage}}</div>
+  <div class="cover-header">
+    <h1 class="cover-title">{{title}}</h1>
+    <div class="cover-subtitle">{{subtitle}}</div>
+    <div class="cover-part-subtitle">{{part_subtitle}}</div>
+  </div>
+
+  <div class="cover-body">
+    <div class="cover-instructor">
+      <span class="cover-instructor-name">{{instructor_name}}</span>
+      <span class="cover-instructor-contact">{{instructor_contact}}</span>
+    </div>
+
+    <div class="cover-meta">
+      <span class="cover-lecture-date">{{lecture_date}}</span>
+      <span class="cover-version">{{version}}</span>
+    </div>
+  </div>
+
+  <div class="cover-qr">
+    <img class="cover-qr-image" src="{{qr_code_path}}" alt="QR" onerror="this.style.display='none'">
+    <div class="cover-qr-url">{{qr_url}}</div>
+  </div>
+</section>

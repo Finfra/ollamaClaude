@@ -1,0 +1,114 @@
+name: ${COMPOSE_PROJECT_NAME:-air_gap_claude_code_lms_multi}
+
+services:
+  # ── 게이트웨이 (nginx L7 분산, 단일 외부 주소) ──────────────────────────────
+  gateway:
+    image: lms-gateway
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: ${GATEWAY_CONTAINER_NAME:-gateway}
+    restart: unless-stopped
+    environment:
+      # nginx 템플릿 envsubst 대상 (proxy_pass 백엔드 포트)
+      - LMS_PORT=${LMS_PORT:-1234}
+      - TZ=${TZ:-Asia/Seoul}
+    ports:
+      # 외부 노출은 GATEWAY_PORT, 컨테이너 내부는 8080 고정
+      - "${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      lms:
+        condition: service_healthy
+    # /v1/models 가 백엔드 응답 시에만 200 → claude 기동 게이팅(B7)
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/v1/models"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+    networks:
+      - lms
+
+  # ── LMS 백엔드 풀 (headless lms CLI) — 'up --scale lms=N' 으로 복제 ─────────
+  #    container_name 미지정: --scale 다중 복제를 위해 compose 자동 네이밍 사용.
+  lms:
+    # LMS_IMAGE 로 태그 오버라이드 (예: lms:small — 저VRAM 멀티 테스트, README 참조).
+    #   ⚠️ lms:small 사용 시 '--build' 금지 — Dockerfile.lms 재빌드가 태그를 덮어씀.
+    image: ${LMS_IMAGE:-lms}
+    build:
+      context: .
+      dockerfile: Dockerfile.lms
+      args:
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    restart: unless-stopped
+    environment:
+      - LMS_MODEL=${LMS_MODEL}
+      - LMS_PORT=${LMS_PORT:-1234}
+      - LMS_HEALTH_TRIES=${LMS_HEALTH_TRIES:-30}
+      - LMS_CONTEXT_LENGTH=${LMS_CONTEXT_LENGTH:-32768}
+      - LMS_GPU=${LMS_GPU:-max}
+      # 동시 예측 슬롯 — llmster 는 컨텍스트를 슬롯 수로 분할(기본 4 → 슬롯당 ctx/4).
+      # Claude Code 시스템 프롬프트가 슬롯을 초과하면 500 (n_keep >= n_ctx). 반드시 1.
+      - LMS_PARALLEL=${LMS_PARALLEL:-1}
+      - TZ=${TZ:-Asia/Seoul}
+    volumes:
+      # 모델 저장소 토글: 비면 named volume(전 복제본 공유), 호스트 경로면 디렉토리 공유.
+      #   ⚠️ 복제본이 같은 볼륨을 공유하므로 최초 1회는 '--scale lms=1' 로 모델을 채운 뒤
+      #      스케일업 권고(동시 'lms get' 다운로드 경합 회피). air-gap 은 사전 마운트.
+      - ${LMS_MODEL_MOUNT:-lms-models}:/home/lms/.lmstudio/models
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:${LMS_PORT:-1234}/v1/models"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+    networks:
+      - lms
+
+  # ── Claude Code 클라이언트 — 게이트웨이 단일 주소에 직결 ────────────────────
+  claude:
+    image: claude
+    build:
+      context: .
+      dockerfile: Dockerfile.claude
+      args:
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    container_name: ${CLAUDE_CONTAINER_NAME:-claude}
+    restart: unless-stopped
+    depends_on:
+      gateway:
+        condition: service_healthy
+    volumes:
+      - ~/df:/home/ubuntu/df
+      - claude-home:/home/ubuntu
+    environment:
+      # 게이트웨이 직결 (변환 게이트웨이 아님 — 순수 분산)
+      - ANTHROPIC_BASE_URL=http://${GATEWAY_CONTAINER_NAME:-gateway}:8080
+      - ANTHROPIC_AUTH_TOKEN=lms
+      - ANTHROPIC_MODEL=${LMS_MODEL}
+      - ANTHROPIC_SMALL_FAST_MODEL=${LMS_MODEL}
+      # 출력 토큰 상한 — LMS 컨텍스트에 input+output 합산 예산 필요.
+      # 32k ctx 모델이면 8192 권장, 128k ctx(lms:small)면 32000 허용.
+      - CLAUDE_CODE_MAX_OUTPUT_TOKENS=${CLAUDE_MAX_OUTPUT_TOKENS:-8192}
+      # 프롬프트 다이어트 (entrypoint.sh 가 settings.json 에 deny 반영, 1=도구 4개만)
+      - CLAUDE_DIET=${CLAUDE_DIET:-1}
+      - GW_HOST=${GATEWAY_CONTAINER_NAME:-gateway}
+      - GW_PORT=8080
+      - LMS_MODEL=${LMS_MODEL}
+      - API_TIMEOUT_MS=${API_TIMEOUT_MS:-600000}
+      - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+      - TZ=${TZ:-Asia/Seoul}
+    tty: true
+    stdin_open: true
+    networks:
+      - lms
+
+volumes:
+  claude-home:
+  lms-models:
+
+networks:
+  lms:
+    name: ${LMS_NETWORK_NAME:-lms}

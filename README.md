@@ -6,13 +6,15 @@ date: 2026-05-07
 
 # 개요
 
-**air-gap-claudeCode** — 폐쇄망(air-gap)·오프라인 환경에서 Claude Code 를 구동하기 위한 Docker 환경. 로컬 LLM 백엔드로 Ollama 를 사용하여, 외부 네트워크 없이 모델 추론을 수행함. 세 가지 구성 중 선택해서 사용함.
+**air-gap-claudeCode** — 폐쇄망(air-gap)·오프라인 환경에서 Claude Code 를 구동하기 위한 Docker 환경. 로컬 LLM 백엔드로 Ollama 또는 LM Studio(LMS)를 사용하여, 외부 네트워크 없이 모델 추론을 수행함. 여러 구성 중 선택해서 사용함.
 
 | 디렉토리         | 구성                  | 용도                                                              |
 | :--------------- | :-------------------- | :---------------------------------------------------------------- |
 | `1.ollama_OneContainer` | 단일 컨테이너         | 빠른 시작·로컬 개발. Ollama + Claude Code가 한 컨테이너에 동거    |
 | `2.ollama_TwoContainer` | 분리 컨테이너 2개     | 운영·다중 클라이언트. Ollama 서비스를 독립시켜 재시작·공유 용이   |
 | `3.ollama_External`     | claude 컨테이너 1개   | 호스트/서버에 이미 설치된 외부 Ollama 에 claude 컨테이너만 연결 (일반 방식) |
+| `4.1.lms_OneLLM`          | lms + claude 2개      | LM Studio(headless lms CLI) 단일 백엔드 + Claude Code 직결. `5.lms_MultiLLM`(GW+다중) 청사진 |
+| `5.lms_MultiLLM`        | gateway + lms×N + claude | 게이트웨이(nginx) 단일 주소 경유로 N개 LMS 백엔드에 다세션 분산 (`--scale lms=N`). 수평 확장 |
 
 공통 사전 요구사항:
 * Docker / Docker Compose (v2 권장 — `.env` 자동 로드 + 틸드 확장 지원)
@@ -38,6 +40,16 @@ vi .env
 cd 3.ollama_External
 cp .env.org .env
 vi .env          # OLLAMA_HOST(외부 Ollama 주소), OLLAMA_MODEL 수정
+
+# 4.1.lms_OneLLM
+cd 4.1.lms_OneLLM
+cp .env.org .env
+vi .env          # LMS_MODEL, LMS_MODEL_MOUNT(모델 디렉토리) 수정
+
+# 5.lms_MultiLLM
+cd 5.lms_MultiLLM
+cp .env.org .env
+vi .env          # LMS_MODEL, GATEWAY_PORT, LMS_BACKEND_COUNT 수정 (기동 시 --scale lms=N)
 ```
 
 * `.env.org` — 커밋된 템플릿 (KEY=VALUE 형식)
@@ -172,19 +184,132 @@ cc          # alias = claude --dangerously-skip-permissions
 # 원격 서버 Ollama 사용 시: .env 에서 OLLAMA_HOST=<서버IP> 로 변경 후 재기동
 ```
 
+# 4.1.lms_OneLLM
+
+> Ollama 가 아닌 **LM Studio(LMS)** 백엔드 예제. `5.lms_MultiLLM`(게이트웨이 + 다중 LLM)으로 가기 위한 **중간 검증 단계**이며, 설계 SSOT 는 [_doc_arch/lms-multi-gateway-design.md](_doc_arch/lms-multi-gateway-design.md).
+
+## 용도
+
+* Ollama 의 추론 속도·동시성 한계를 LM Studio 백엔드로 대체 검증하는 첫 단계
+* LMS(headless `lms` CLI) 컨테이너 1개 + Claude Code 컨테이너 1개로 "LMS 가 Claude Code 와 직결로 말이 통하는가"를 단일 경로에서 확인
+* 다음 단계 `5.lms_MultiLLM`(게이트웨이 + 백엔드 N개)의 청사진
+
+## 특징
+
+* 컨테이너 2개(`lms`, `claude`) — `2.ollama_TwoContainer` 구조 계승 (`lms` 가 `ollama` 자리 대체)
+* **headless `lms` CLI** 구동 — LM Studio GUI 데스크톱 앱이 아님. `lms server`/`lms load`/`lms log stream` 와 OpenAI 호환 `/v1` 로만 제어 (Docker 기반이라 GUI 없음)
+* **변환 게이트웨이 없음 (직결)**: `ANTHROPIC_BASE_URL=http://lms:1234` + `ANTHROPIC_AUTH_TOKEN=lms` 로 claude CLI 가 LMS OpenAI 엔드포인트에 직접 동작 (prj81 검증)
+* `entrypoint.lms.sh` 시퀀스: `http-server-config.json`(0.0.0.0 바인딩) 주입 → `lms server start` → `/v1/models` 헬스 폴링 → `lms load ${LMS_MODEL}` → `exec lms log stream`(PID1)
+* `lms` healthcheck(`/v1/models`) 통과 후에야 `claude` 가 기동 (`depends_on: service_healthy`)
+* 모델 저장소 토글: `LMS_MODEL_MOUNT` (빈값=named volume `lms-models` / 호스트 경로=기존 LM Studio 모델 디렉토리 공유)
+* GPU 는 `docker-compose.gpu.yml` override 로 활성화 (`runtime: nvidia`)
+
+> **실기동 검증됨(온라인+GPU)**: build→up→모델 다운로드(Llama-3.1-8B GGUF)→GPU 로드→크로스컨테이너 추론 왕복까지 동작 확인. LMS 는 OpenAI `/v1` 뿐 아니라 **Anthropic `/v1/messages` 도 네이티브 지원**(변환 GW 불요 실증). 단 `claude` 대화형 에이전트 루프는 8B 급 tool-use 한계로 부적합 — 에이전트 용도는 더 큰/특화 모델 필요. 상세는 폴더 [README](4.1.lms_OneLLM/README.md).
+>
+> **air-gap 주의**: 현 구현은 **온라인 빌드 전제**(`install.sh` 로 `lms` 설치, `lms get` 으로 모델 다운로드). 폐쇄망은 docker `export`+`compose` 반입 파이프라인으로 전환하며, `Dockerfile.lms` 에 오프라인 COPY 대안이 주석으로 보존됨.
+>
+> **폴더 이력 (2026-07-17)**: 온라인·fg1 운영판(구 `4.lms_OneLLM`)은 air-gap 이 아니어서 `~/_git/__all/dockers/4.lms_OneLLM` 로 이전. 본 저장소에는 air-gap 원본 `4.1.lms_OneLLM`(구 `4.1.lms_OneLLM_for_air-gap`)만 유지.
+
+## 사용법
+
+```bash
+cd 4.1.lms_OneLLM
+cp .env.org .env
+vi .env          # LMS_MODEL, LMS_MODEL_MOUNT 지정
+
+# 기본(CPU 가정) 기동
+docker compose up -d --build
+
+# NVIDIA GPU 사용
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+
+# 호스트 코드 폴더 마운트 (선택)
+docker compose -f docker-compose.yml -f docker-compose.code.yml up -d --build
+
+# 컨테이너 접속 (ubuntu 유저, 기본 유저)
+docker exec -it claude bash
+
+# 컨테이너 내부에서 Claude Code 실행
+cc          # alias = claude --dangerously-skip-permissions
+
+# 모델 수동 로드(자동 로드 실패 시)
+docker exec -it lms lms load <model>
+```
+
+## 테스트 모델 권장 (context ≥128k)
+
+| 모델 | 크기 | context | 용도 |
+| :--- | :--- | :--- | :--- |
+| `Phi-3.5-mini-instruct` | 3.8B | 128k | 스모크(연결·기동) — 가장 빠른 왕복 |
+| `Llama-3.1-8B-Instruct` | 8B | 128k | 범용 안정 기준선 |
+| `DeepSeek-Coder-V2-Lite` | 16B MoE | 160k | 코딩 검증 (MoE 로 빠름) |
+
+# 5.lms_MultiLLM
+
+> `4.1.lms_OneLLM`(직결 단일)의 **최종 확장형** — 게이트웨이(nginx) 단일 주소 뒤에 LMS 백엔드를 N개 두어 다세션을 분산. 설계 SSOT 는 [_doc_arch/lms-multi-gateway-design.md](_doc_arch/lms-multi-gateway-design.md), 폴더 상세는 [5.lms_MultiLLM/README.md](5.lms_MultiLLM/README.md).
+
+## 용도
+
+* Claude Code 세션이 늘어도 **접근 주소는 게이트웨이 하나**로 고정하고, 뒤에서 백엔드를 늘려 동시성·처리량을 확보
+* 단일 LMS 의 직렬 처리 한계를 **수평 확장**(`--scale lms=N`)으로 해소
+* `4.1.lms_OneLLM` 에서 검증된 직결(변환 GW 불요, B1)을 그대로 계승하고 분산 계층만 추가
+
+## 특징
+
+* 컨테이너 3종: `gateway`(nginx L7 분산) + `lms`(백엔드 풀, `--scale` 다중 복제) + `claude`(클라이언트)
+* **변환 게이트웨이 아님** — nginx 는 순수 L7 패스스루 로드밸런서. claude→게이트웨이→LMS 모두 OpenAI `/v1` 직결 (token=`lms`)
+* 백엔드 디스커버리: Docker 임베디드 DNS(127.0.0.11) + 변수 `proxy_pass` → `--scale lms=N` 복제본을 **매 요청 라운드로빈** 분산 (least_conn 정적 upstream 은 `nginx.conf.template` 주석 대안)
+* **SSE 스트리밍 보존**: `proxy_buffering off` + 타임아웃 600s (claude 토큰 스트림 깨짐 방지)
+* **기동 게이팅**: 게이트웨이 healthcheck=`/v1/models`(백엔드 응답 시에만 200) → `claude` 는 게이트웨이 healthy 후 기동 (모델 로드 중 초기 502 차단)
+* 전 백엔드 동일 `LMS_MODEL` 로드 → model 필드 일치 → nginx 패스스루로 충분 (다중 모델 라우팅이 필요하면 LiteLLM 격상)
+* 외부 노출은 게이트웨이 1포트(`GATEWAY_PORT`)만. LMS 백엔드는 내부 네트워크 전용
+
+> **모델 공유 주의**: `--scale` 복제본이 `lms-models` 볼륨을 공유하므로, 최초 1회는 `--scale lms=1` 로 모델을 받은 뒤 스케일업 권고(동시 `lms get` 다운로드 경합 회피). air-gap 은 모델 디렉토리를 사전 마운트.
+>
+> **에이전트 한계(B1')**: 8B 급은 tool-use 한계로 claude 대화형 에이전트 루프에 부적합(Issue13 실증). 에이전트 용도면 더 큰/특화 모델 권장.
+
+## 사용법
+
+```bash
+cd 5.lms_MultiLLM
+cp .env.org .env
+vi .env          # LMS_MODEL, GATEWAY_PORT 지정
+
+# 기본 기동 (백엔드 2개)
+docker compose up -d --build --scale lms=2
+
+# NVIDIA GPU 사용
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build --scale lms=2
+
+# 호스트 코드 폴더 마운트 (선택)
+docker compose -f docker-compose.yml -f docker-compose.code.yml up -d --build --scale lms=2
+
+# 컨테이너 접속 후 Claude Code 실행
+docker exec -it claude bash
+cc               # alias = claude --dangerously-skip-permissions
+
+# 백엔드 분산 확인 (게이트웨이 → 복제본 로그)
+docker compose logs -f gateway
+docker compose logs -f lms
+```
+
+> ⚠️ 실제 다중 백엔드 `up --scale` 동작은 GPU·온라인 LMS 설치·모델 다운로드에 의존하여 GPU 호스트에서 별도 검증이 필요함(현 단계는 `compose config`·`bash -n`·nginx `-t` 정적 검증까지 완료).
+
 # 모드 비교 요약
 
-| 항목                | 1.ollama_OneContainer                                          | 2.ollama_TwoContainer                                          | 3.ollama_External                                              |
-| :------------------ | :------------------------------------------------------------- | :------------------------------------------------------------- | :------------------------------------------------------------- |
-| 컨테이너 수         | 1                                                              | 2 (`ollama`, `claude`)                                         | 1 (`claude` — Ollama는 호스트)                                 |
-| Ollama 접근 (내부)  | `http://127.0.0.1:11434`                                       | `http://ollama:11434`                                          | `http://host.docker.internal:11434` (`OLLAMA_HOST` 변수화)     |
-| Ollama 접근 (호스트)| `http://localhost:11437`                                       | `http://localhost:11436`                                       | 호스트 Ollama 직접 (`localhost:11434`)                         |
-| 베이스 이미지       | `ollama/ollama` (확장)                                         | `ollama/ollama` + `debian:bookworm-slim`                       | `debian:bookworm-slim` (claude만)                              |
-| Ollama 구동 주체    | 컨테이너                                                       | 컨테이너                                                       | 호스트/원격 서버 (선설치)                                      |
-| Ollama 단독 재시작  | 불가 (claude까지 같이 내려감)                                  | 가능                                                           | 해당 없음 (호스트가 관리)                                      |
-| 다중 클라이언트 공유| 어려움                                                        | 용이                                                           | 매우 용이 (중앙 Ollama 공용)                                   |
-| 모델 저장소 토글    | `OLLAMA_MOUNT` (공유: `~/.ollama` / 격리: `ollama-models`)     | 동일                                                           | 해당 없음 (호스트 Ollama 소관)                                 |
-| 코드 폴더 마운트    | `MOUNT_CODE_DIR` + `docker-compose.code.yml`                   | 동일                                                           | 동일                                                           |
+| 항목                | 1.ollama_OneContainer                                          | 2.ollama_TwoContainer                                          | 3.ollama_External                                              | 4.1.lms_OneLLM                                                   | 5.lms_MultiLLM                                                 |
+| :------------------ | :------------------------------------------------------------- | :------------------------------------------------------------- | :------------------------------------------------------------- | :------------------------------------------------------------- | :------------------------------------------------------------- |
+| 백엔드              | Ollama                                                         | Ollama                                                         | Ollama (외부)                                                  | **LM Studio (headless lms CLI)**                              | **LM Studio ×N (게이트웨이 분산)**                            |
+| 컨테이너 수         | 1                                                              | 2 (`ollama`, `claude`)                                         | 1 (`claude` — Ollama는 호스트)                                 | 2 (`lms`, `claude`)                                            | 2+N (`gateway`, `lms`×N, `claude`)                            |
+| 백엔드 접근 (내부)  | `http://127.0.0.1:11434`                                       | `http://ollama:11434`                                          | `http://host.docker.internal:11434` (`OLLAMA_HOST` 변수화)     | `http://lms:1234` (`LMS_PORT` 변수화)                         | `http://gateway:8080` → `lms:1234` ×N (nginx 분산)            |
+| 프로토콜            | Anthropic 직결                                                 | Anthropic 직결                                                 | Anthropic 직결                                                 | OpenAI `/v1` 직결 (변환 GW 없음, token=`lms`)                 | OpenAI `/v1` 직결 (nginx L7 패스스루, 변환 없음)             |
+| 베이스 이미지       | `ollama/ollama` (확장)                                         | `ollama/ollama` + `debian:bookworm-slim`                       | `debian:bookworm-slim` (claude만)                              | `debian:bookworm-slim` ×2 (lms·claude)                        | `nginx:1.27` + `debian:bookworm-slim`(lms·claude)            |
+| 백엔드 구동 주체    | 컨테이너                                                       | 컨테이너                                                       | 호스트/원격 서버 (선설치)                                      | 컨테이너                                                      | 컨테이너 (N개)                                               |
+| 백엔드 단독 재시작  | 불가 (claude까지 같이 내려감)                                  | 가능                                                           | 해당 없음 (호스트가 관리)                                      | 가능                                                          | 가능 (복제본 단위)                                          |
+| 모델 저장소 토글    | `OLLAMA_MOUNT` (공유: `~/.ollama` / 격리: `ollama-models`)     | 동일                                                           | 해당 없음 (호스트 Ollama 소관)                                 | `LMS_MODEL_MOUNT` (공유: 호스트 / 격리: `lms-models`)         | `LMS_MODEL_MOUNT` (복제본 전체 볼륨 공유)                    |
+| GPU 토글            | `docker-compose.gpu.yml`                                       | `docker-compose.gpu.yml`                                       | 해당 없음 (호스트 소관)                                        | `docker-compose.gpu.yml`                                       | `docker-compose.gpu.yml` (lms 풀에 적용)                    |
+| 코드 폴더 마운트    | `MOUNT_CODE_DIR` + `docker-compose.code.yml`                   | 동일                                                           | 동일                                                           | 동일                                                          | 동일                                                        |
+| 확장/동시성         | 수직 (GPU 1)                                                   | 수직                                                          | 호스트 의존                                                   | 수직 (단일 백엔드)                                          | **수평 (`--scale lms=N`)**                                   |
 
 # 마운트 옵션
 
